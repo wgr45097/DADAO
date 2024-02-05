@@ -296,10 +296,9 @@ def : Pat<(sub GPRB:$Rs1, i64neg12:$imm),
 // -------------------------------------------------- //
 
 class COMPARE_ORRR<bits<6> minorop, string OpcString, RegisterClass GPRcmp>
-  : Inst_ORRR<0b00010000, minorop, (outs), (ins GPRD:$RxHb, GPRcmp:$RyHc, GPRcmp:$RzHd), OpcString, "$RxHb, $RyHc, $RzHd",
+  : Inst_ORRR<0b00010000, minorop, (outs GPRD:$RxHb), (ins GPRcmp:$RyHc, GPRcmp:$RzHd), OpcString, "$RxHb, $RyHc, $RzHd",
              [(DadaoSetFlag GPRD:$RxHb, GPRcmp:$RyHc, GPRcmp:$RzHd)]> {
 
-  let Defs = [RDCC];
   let isCompare = 1;
 }
 
