@@ -1,17 +1,20 @@
 include common.mk
 
-default: test.ll test.bc test.s test.o test.elf
+# default: test.ll test.bc test.s test.o test.elf test.qemu
+default: test.bc test.s test.o test.elf test.qemu
 
-%.ll: %.c
-	$(DADAO_LLVM_CLANG) -target dadao -S -emit-llvm $< -o $@
+# %.ll: %.c
+# 	$(DADAO_LLVM_CLANG) -target dadao -S -emit-llvm $< -o $@
 
 %.bc: %.ll
 	$(DADAO_LLVM_AS) $< -o $@
 
 %.s: %.bc
+#	$(DADAO_LLVM_LLC) $< -o $@ -debug
 	$(DADAO_LLVM_LLC) $< -o $@
 
 %.o: %.s
+#	$(DADAO_LLVM_MC) $< -triple dadao -filetype=obj -o $@ -debug
 	$(DADAO_LLVM_MC) $< -triple dadao -filetype=obj -o $@
 
 %.dump: %.o
