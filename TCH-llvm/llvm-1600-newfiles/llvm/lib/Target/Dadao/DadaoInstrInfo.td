@@ -323,13 +323,10 @@ def CMPU_RRII   : COMPARE_RRII<0b00010011, "cmpu", i64lo12z>;
 // -------------------------------------------------- //
 
 class CONDSET_RRRR<bits<8> majorop, string OpcString>
-  : Inst_RRRR<majorop, (outs GPRD:$RdHb), (ins GPRD:$RdHc, GPRD:$RdHd, GPRD:$RdHa),
+  : Inst_RRRR<majorop, (outs GPRD:$RdHb), (ins GPRD:$RdHa, GPRD:$RdHc, GPRD:$RdHd),
               OpcString, "$RdHa, $RdHb, $RdHc, $RdHd",
               [(set (i64 GPRD:$RdHb), (DadaoSelectCC (i64 GPRD:$RdHc), (i64 GPRD:$RdHd),
                                       (imm:$RdHa)))]> {
-    let RdHa = RDCC.Num;
-    let Uses = [RDCC];
-    let isSelect = 1;
   }
 
 def CSN     : CONDSET_RRRR<0b00100000, "csn">;

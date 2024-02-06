@@ -15,12 +15,14 @@
 #include "DadaoRegisterInfo.h"
 #include "DadaoSubtarget.h"
 #include "DadaoTargetMachine.h"
+#include "MCTargetDesc/DadaoMCTargetDesc.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Instructions.h"
@@ -262,34 +264,115 @@ void DadaoDAGToDAGISel::selectSETCC(SDNode *Node) {
   SDLoc DL(Node);
 
   // Compare LHS
-  SDNode* TargetCC = Node->getOperand(0).getNode();
-  int64_t CC = cast<ConstantSDNode>(TargetCC)->getConstantIntValue()->getSExtValue();
-  SDNode* Flag = Node->getOperand(1).getNode();
+  SDNode *TargetCC = Node->getOperand(0).getNode();
+  int64_t CC =
+      cast<ConstantSDNode>(TargetCC)->getConstantIntValue()->getSExtValue();
+  SDNode *Flag = Node->getOperand(1).getNode();
   SDValue LHS = Flag->getOperand(0);
   SDValue RHS = Flag->getOperand(1);
 
   // Three cases: 1. signed cmp; 2. unsigned cmp; 3. not cmp
   // For now, we only support signed less than cmp, i.e. LCPP::ICC_LT
-  assert(CC == LPCC::ICC_LT);
+  if (CC == LPCC::ICC_LT) {
+    // Also, we assume both LHS and RHS are values in registers, so that
+    // we can signed-compare them with Dadao::CMPS_ORRR
+    unsigned Opc = Dadao::CMPS_ORRR;
+    EVT VT = Node->getValueType(0); // This should always be MVT::i64 for SETCC
 
-  // Also, we assume both LHS and RHS are values in registers, so that
-  // we can signed-compare them with Dadao::CMPS_ORRR
-  unsigned Opc = Dadao::CMPS_ORRR;
-  EVT VT = Node->getValueType(0); // This should always be MVT::i64 for SETCC
+    SDValue Compare(CurDAG->getMachineNode(Opc, DL, VT, LHS, RHS), 0);
 
-  SDValue Compare(CurDAG->getMachineNode(Opc, DL, VT, LHS, RHS), 0);
-
-  // -1 => less than => 1
-  // 0 => equal => 0
-  // 1 => greater than => 0
-  // conclusion: we just need to logical-right-shift result by 63. (Dadao::SHRU_ORRI)
-  Opc = Dadao::SHRU_ORRI;
-  SDValue Imm = CurDAG->getTargetConstant(63, DL, MVT::i64);
-  if (Node->hasOneUse()) {
-    CurDAG->SelectNodeTo(Node, Opc, VT, Compare, Imm);
+    // -1 => less than => 1
+    // 0 => equal => 0
+    // 1 => greater than => 0
+    // conclusion: we just need to logical-right-shift result by 63.
+    // (Dadao::SHRU_ORRI)
+    Opc = Dadao::SHRU_ORRI;
+    SDValue Imm = CurDAG->getTargetConstant(63, DL, MVT::i64);
+    if (Node->hasOneUse()) {
+      CurDAG->SelectNodeTo(Node, Opc, VT, Compare, Imm);
+      return;
+    }
+    ReplaceNode(Node, CurDAG->getMachineNode(Opc, DL, VT, Compare, Imm));
     return;
   }
-  ReplaceNode(Node, CurDAG->getMachineNode(Opc, DL, VT, Compare, Imm));
+  unsigned Opc = Dadao::CMPS_ORRR;
+  EVT VT = Node->getValueType(0); // This should always be MVT::i64 for SETCC
+  SDValue Const_1 = CurDAG->getConstant(1, DL, MVT::i64);
+  SDValue Const_0 = CurDAG->getConstant(0, DL, MVT::i64);
+  SDValue Instr_a, Instr_b;
+  SDNode *Instr_final;
+
+  switch (CC) {
+  case LPCC::ICC_GT:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPS_ORRR, DL, VT, RHS, LHS), 0);
+    Instr_b = CurDAG->getTargetConstant(63, DL, MVT::i64);
+    Instr_final =
+        CurDAG->getMachineNode(Dadao::SHRU_ORRI, DL, VT, Instr_a, Instr_b);
+    break;
+  case LPCC::ICC_LT:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPS_ORRR, DL, VT, LHS, RHS), 0);
+    Instr_b = CurDAG->getTargetConstant(63, DL, MVT::i64);
+    Instr_final =
+        CurDAG->getMachineNode(Dadao::SHRU_ORRI, DL, VT, Instr_a, Instr_b);
+    break;
+  case LPCC::ICC_GE:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPS_ORRR, DL, VT, LHS, RHS), 0);
+    // -1 => less than => 0
+    // 0 => equal => 1
+    // 1 => greater than => 1
+    Instr_final = CurDAG->getMachineNode(Dadao::CSN, DL, VT, Instr_a, Const_0, Const_1);
+    break;
+  case LPCC::ICC_LE:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPS_ORRR, DL, VT, RHS, LHS), 0);
+    Instr_final = CurDAG->getMachineNode(Dadao::CSN, DL, VT, Instr_a, Const_0, Const_1);
+    break;
+  case LPCC::ICC_UGT:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, RHS, LHS), 0);
+    Instr_b = CurDAG->getTargetConstant(63, DL, MVT::i64);
+    Instr_final =
+        CurDAG->getMachineNode(Dadao::SHRU_ORRI, DL, VT, Instr_a, Instr_b);
+    break;
+  case LPCC::ICC_ULT:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, LHS, RHS), 0);
+    Instr_b = CurDAG->getTargetConstant(63, DL, MVT::i64);
+    Instr_final =
+        CurDAG->getMachineNode(Dadao::SHRU_ORRI, DL, VT, Instr_a, Instr_b);
+    break;
+  case LPCC::ICC_UGE:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, LHS, RHS), 0);
+    Instr_final = CurDAG->getMachineNode(Dadao::CSN, DL, VT, Instr_a, Const_0, Const_1);
+    break;
+  case LPCC::ICC_ULE:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, RHS, LHS), 0);
+    Instr_final = CurDAG->getMachineNode(Dadao::CSN, DL, VT, Instr_a, Const_0, Const_1);
+    break;
+  case LPCC::ICC_EQ:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, LHS, RHS), 0);
+    Instr_final = CurDAG->getMachineNode(Dadao::CSZ, DL, VT, Instr_a, Const_1, Const_0);
+    break;
+  case LPCC::ICC_NE:
+    Instr_a =
+        SDValue(CurDAG->getMachineNode(Dadao::CMPU_ORRR, DL, VT, LHS, RHS), 0);
+    // -1 => unsigned less than => 1
+    // 0 => equal => 0
+    // 1 => unsigned greater than => 1
+    Instr_b = CurDAG->getTargetConstant(1, DL, MVT::i64);
+    Instr_final =
+        CurDAG->getMachineNode(Dadao::ANDI_RRII, DL, VT, Instr_a, Instr_b);
+    break;
+  }
+  ReplaceNode(Node, Instr_final);
+  Select(Const_0.getNode());
+  Select(Const_1.getNode());
 }
 
 // createDadaoISelDag - This pass converts a legalized DAG into a
