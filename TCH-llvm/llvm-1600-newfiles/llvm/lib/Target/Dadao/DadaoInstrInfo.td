@@ -631,7 +631,7 @@ def CallTarget : Operand<i64> {
   let DecoderMethod = "decodeBranch";
 }
 
-def CALL_IIII : Inst_IIII<0b01101100, (outs), (ins CallTarget:$Imm24), "call", "$Imm24", [(DadaoCall bb:$Imm24)]> {
+def CALL_IIII : Inst_IIII<0b01101100, (outs), (ins CallTarget:$Imm24), "call", "$Imm24", []> {
   let isCall = 1;
   let isCodeGenOnly = 0;
   let Uses = [RASP];
