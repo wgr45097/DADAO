@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "DadaoMCTargetDesc.h"
 #include "MCTargetDesc/DadaoBaseInfo.h"
 #include "MCTargetDesc/DadaoFixupKinds.h"
 #include "MCTargetDesc/DadaoMCExpr.h"
@@ -78,12 +79,14 @@ public:
 
 static Dadao::Fixups FixupKind(const MCExpr *Expr) {
   if (isa<MCSymbolRefExpr>(Expr))
-    return Dadao::FIXUP_DADAO_21;
+    // return Dadao::FIXUP_DADAO_21;
+    return Dadao::FIXUP_DADAO_ABS;
   if (const DadaoMCExpr *McExpr = dyn_cast<DadaoMCExpr>(Expr)) {
     DadaoMCExpr::VariantKind ExprKind = McExpr->getKind();
     switch (ExprKind) {
     case DadaoMCExpr::VK_Dadao_None:
-      return Dadao::FIXUP_DADAO_21;
+      // return Dadao::FIXUP_DADAO_21;
+      return Dadao::FIXUP_DADAO_ABS;
     case DadaoMCExpr::VK_Dadao_ABS_HI:
       return Dadao::FIXUP_DADAO_HI16;
     case DadaoMCExpr::VK_Dadao_ABS_LO:
@@ -126,6 +129,25 @@ void DadaoMCCodeEmitter::encodeInstruction(
   // Get instruction encoding and emit it
   unsigned Value = getBinaryCodeForInstr(Inst, Fixups, SubtargetInfo);
   ++MCNumEmitted; // Keep track of the number of emitted insns.
+
+  // TODO: Add 3 swym instructions as placeholder after each setrd/setrb with R_DADAO_ABS relocation 
+  bool hasAbsReloc = false;
+  for (auto fixup : Fixups)
+    if (fixup.getTargetKind() == Dadao::FIXUP_DADAO_ABS)
+      hasAbsReloc = true;
+  
+  bool isR2R = false;
+  switch (Inst.getOpcode()) {
+    case Dadao::RD2RD_ORRI:
+    case Dadao::RD2RB_ORRI:
+    case Dadao::RB2RD_ORRI:
+    case Dadao::RB2RB_ORRI:
+      isR2R = true;
+  }
+  // For now, only imm6 == 1 is allowed in R2R instructions, so we don't check this explicitly.
+  if (hasAbsReloc && isR2R) {
+    
+  }
 
   // Emit bytes in little-endian
   for (int i = 0; i <= (4 - 1) * 8; i += 8)

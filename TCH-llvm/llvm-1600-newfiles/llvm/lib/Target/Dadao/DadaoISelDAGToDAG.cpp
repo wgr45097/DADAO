@@ -16,6 +16,7 @@
 #include "DadaoSubtarget.h"
 #include "DadaoTargetMachine.h"
 #include "MCTargetDesc/DadaoMCTargetDesc.h"
+#include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -79,6 +80,7 @@ private:
   void selectFrameIndex(SDNode *N);
   void selectSETCC(SDNode *N);
   void selectBR_CC(SDNode *N);
+  void selectGlobalAddress(SDNode *N);
 
   // Complex Pattern for address selection.
   bool selectAddrRRII(SDValue Addr, SDValue &Base, SDValue &Offset);
@@ -231,6 +233,8 @@ void DadaoDAGToDAGISel::Select(SDNode *Node) {
       if (ConstNode->isZero()) {
         SDValue New = CurDAG->getCopyFromReg(CurDAG->getEntryNode(),
                                              SDLoc(Node), Dadao::RDZERO, MVT::i64);
+        // TODO: Force the destination of CopyFromReg to be a virtual register in RD register class,
+        // so that coalescer can work properly. (Currently the default register class for MVT::i64 is RB.) 
         return ReplaceNode(Node, New.getNode());
       }
     }
@@ -252,6 +256,9 @@ void DadaoDAGToDAGISel::Select(SDNode *Node) {
     return;
   case DadaoISD::BR_CC:
     selectBR_CC(Node);
+    return;
+  case ISD::GlobalAddress:
+    selectGlobalAddress(Node);
     return;
   default:
     break;
@@ -469,6 +476,26 @@ void DadaoDAGToDAGISel::selectBR_CC(SDNode *Node) {
     Instr_final = CurDAG->getMachineNode(OpcodeBr, DL, VT, SDValue(BranchDest,0), Instr_a);
   }
   ReplaceNode(Node, Instr_final);
+}
+
+
+void DadaoDAGToDAGISel::selectGlobalAddress(SDNode *Node) {
+  SDLoc DL(Node);
+  const GlobalValue *GV = cast<GlobalAddressSDNode>(Node)->getGlobal();
+  int64_t Offset = cast<GlobalAddressSDNode>(Node)->getOffset();
+
+  // Create the TargetGlobalAddress node, folding in the constant offset.
+  /*
+  SDValue Hi = DAG.getTargetGlobalAddress(
+      GV, DL, getPointerTy(DAG.getDataLayout()), Offset, OpFlagHi);
+  SDValue Lo = DAG.getTargetGlobalAddress(
+      GV, DL, getPointerTy(DAG.getDataLayout()), Offset, OpFlagLo);
+  Hi = DAG.getNode(DadaoISD::HI, DL, MVT::i64, Hi);
+  Lo = DAG.getNode(DadaoISD::LO, DL, MVT::i64, Lo);
+  return DAG.getNode(ISD::OR, DL, MVT::i64, Hi, Lo);
+  */
+  SDValue tga = CurDAG->getTargetGlobalAddress(GV, DL, MVT::i64, Offset);
+  ReplaceNode(Node, CurDAG->getMachineNode(Dadao::RD2RD_ORRI, DL, MVT::i64, tga));
 }
 
 // createDadaoISelDag - This pass converts a legalized DAG into a

@@ -34,6 +34,8 @@ enum TOF {
   // address.
   MO_ABS_HI,
   MO_ABS_LO,
+  // MO_ABS - Represents an absolute symbol address
+  MO_ABS,
 };
 } // namespace DadaoII
 

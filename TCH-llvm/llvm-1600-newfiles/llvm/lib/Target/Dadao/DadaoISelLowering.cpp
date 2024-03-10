@@ -90,7 +90,7 @@ DadaoTargetLowering::DadaoTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SELECT, MVT::i64, Expand);
   setOperationAction(ISD::SELECT_CC, MVT::i64, Custom);
 
-  setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
+  setOperationAction(ISD::GlobalAddress, MVT::i64, Legal);
   setOperationAction(ISD::BlockAddress, MVT::i64, Custom);
   setOperationAction(ISD::JumpTable, MVT::i64, Custom);
   setOperationAction(ISD::ConstantPool, MVT::i64, Custom);
@@ -172,8 +172,8 @@ SDValue DadaoTargetLowering::LowerOperation(SDValue Op,
     return LowerBR_CC(Op, DAG);
   case ISD::ConstantPool:
     return LowerConstantPool(Op, DAG);
-  case ISD::GlobalAddress:
-    return LowerGlobalAddress(Op, DAG);
+  // case ISD::GlobalAddress:
+  //   return LowerGlobalAddress(Op, DAG);
   case ISD::BlockAddress:
     return LowerBlockAddress(Op, DAG);
   case ISD::JumpTable:
@@ -1049,6 +1049,7 @@ SDValue DadaoTargetLowering::LowerGlobalAddress(SDValue Op,
   uint8_t OpFlagLo = DadaoII::MO_ABS_LO;
 
   // Create the TargetGlobalAddress node, folding in the constant offset.
+  /*
   SDValue Hi = DAG.getTargetGlobalAddress(
       GV, DL, getPointerTy(DAG.getDataLayout()), Offset, OpFlagHi);
   SDValue Lo = DAG.getTargetGlobalAddress(
@@ -1056,6 +1057,8 @@ SDValue DadaoTargetLowering::LowerGlobalAddress(SDValue Op,
   Hi = DAG.getNode(DadaoISD::HI, DL, MVT::i64, Hi);
   Lo = DAG.getNode(DadaoISD::LO, DL, MVT::i64, Lo);
   return DAG.getNode(ISD::OR, DL, MVT::i64, Hi, Lo);
+  */
+  return DAG.getTargetGlobalAddress(GV, DL, MVT::i64);
 }
 
 SDValue DadaoTargetLowering::LowerBlockAddress(SDValue Op,
@@ -1066,8 +1069,8 @@ SDValue DadaoTargetLowering::LowerBlockAddress(SDValue Op,
   uint8_t OpFlagHi = DadaoII::MO_ABS_HI;
   uint8_t OpFlagLo = DadaoII::MO_ABS_LO;
 
-  SDValue Hi = DAG.getBlockAddress(BA, MVT::i64, true, OpFlagHi);
-  SDValue Lo = DAG.getBlockAddress(BA, MVT::i64, true, OpFlagLo);
+  SDValue Hi = DAG.getBlockAddress(BA, MVT::i64, 0, true, OpFlagHi);
+  SDValue Lo = DAG.getBlockAddress(BA, MVT::i64, 0, true, OpFlagLo);
   Hi = DAG.getNode(DadaoISD::HI, DL, MVT::i64, Hi);
   Lo = DAG.getNode(DadaoISD::LO, DL, MVT::i64, Lo);
   SDValue Result = DAG.getNode(ISD::OR, DL, MVT::i64, Hi, Lo);

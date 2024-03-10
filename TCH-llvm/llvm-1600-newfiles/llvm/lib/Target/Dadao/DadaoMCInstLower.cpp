@@ -77,13 +77,16 @@ MCOperand DadaoMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   case DadaoII::MO_ABS_LO:
     Kind = DadaoMCExpr::VK_Dadao_ABS_LO;
     break;
+  case DadaoII::MO_ABS:
+    Kind = DadaoMCExpr::VK_Dadao_None;
+    break;
   default:
     llvm_unreachable("Unknown target flag on GV operand");
   }
 
   const MCExpr *Expr =
       MCSymbolRefExpr::create(Sym, MCSymbolRefExpr::VK_None, Ctx);
-  if (!MO.isJTI() && MO.getOffset())
+  if (!MO.isJTI() && MO.getOffset()) // What's this?
     Expr = MCBinaryExpr::createAdd(
         Expr, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
   Expr = DadaoMCExpr::create(Kind, Expr, Ctx);
@@ -91,6 +94,7 @@ MCOperand DadaoMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
 }
 
 void DadaoMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
+  // Maybe lower an abs relocation here? Will assembler ever reach here?
   OutMI.setOpcode(MI->getOpcode());
 
   for (const MachineOperand &MO : MI->operands()) {
