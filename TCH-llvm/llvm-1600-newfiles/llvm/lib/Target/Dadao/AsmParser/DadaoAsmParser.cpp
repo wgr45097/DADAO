@@ -7,9 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "DadaoCondCode.h"
+#include "DadaoRegisterInfo.h"
 #include "DadaoWydePosition.h"
 #include "DadaoInstrInfo.h"
 #include "MCTargetDesc/DadaoMCExpr.h"
+#include "MCTargetDesc/DadaoMCTargetDesc.h"
 #include "TargetInfo/DadaoTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -47,6 +49,12 @@ namespace {
 struct DadaoOperand;
 
 class DadaoAsmParser : public MCTargetAsmParser {
+  SMLoc getLoc() const { return getParser().getTok().getLoc(); }
+
+  unsigned
+  checkEarlyTargetMatchPredicate(MCInst &Inst,
+                                 const OperandVector &Operands) override;
+
   // Parse operands
   std::unique_ptr<DadaoOperand> parseRegister(bool RestoreOnFailure = false);
 
@@ -63,6 +71,8 @@ class DadaoAsmParser : public MCTargetAsmParser {
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override;
 
+  OperandMatchResultTy parseBareSymbol(OperandVector &Operands);
+
   bool parseRegister(MCRegister &RegNum, SMLoc &StartLoc,
                      SMLoc &EndLoc) override;
   OperandMatchResultTy tryParseRegister(MCRegister &RegNo, SMLoc &StartLoc,
@@ -72,6 +82,11 @@ class DadaoAsmParser : public MCTargetAsmParser {
                                OperandVector &Operands, MCStreamer &Out,
                                uint64_t &ErrorInfo,
                                bool MatchingInlineAsm) override;
+
+  void emitToStreamer(MCStreamer &S, const MCInst &Inst);
+
+  bool processInstruction(MCInst &Inst, SMLoc IDLoc, OperandVector &Operands,
+                          MCStreamer &Out);
 
 // Auto-generated instruction matching functions
 #define GET_ASSEMBLER_HEADER
@@ -382,36 +397,15 @@ public:
   }
 
   bool isImmWyde1() {
-    if (!isImm())
-      return false;
-
-    const MCConstantExpr *ConstExpr = dyn_cast<MCConstantExpr>(Imm.Value);
-    if (!ConstExpr)
-      return false;
-    int64_t Value = ConstExpr->getValue();
-    return Value != 0 && isShiftedUInt<16, 16>(Value);
+    return isImmWyde0();
   }
 
   bool isImmWyde2() {
-    if (!isImm())
-      return false;
-
-    const MCConstantExpr *ConstExpr = dyn_cast<MCConstantExpr>(Imm.Value);
-    if (!ConstExpr)
-      return false;
-    int64_t Value = ConstExpr->getValue();
-    return Value != 0 && isShiftedUInt<16, 32>(Value);
+    return isImmWyde0();
   }
 
   bool isImmWyde3() {
-    if (!isImm())
-      return false;
-
-    const MCConstantExpr *ConstExpr = dyn_cast<MCConstantExpr>(Imm.Value);
-    if (!ConstExpr)
-      return false;
-    int64_t Value = ConstExpr->getValue();
-    return Value != 0 && isShiftedUInt<16, 48>(Value);
+    return isImmWyde0();
   }
 
   bool isImmHex1() {
@@ -434,6 +428,39 @@ public:
       return false;
     uint64_t Value = ConstExpr->getValue();
     return (Value < DDWP::BEYOND);
+  }
+
+  /*
+  static bool evaluateConstantImm(const MCExpr *Expr, int64_t &Imm,
+                                  DadaoMCExpr::VariantKind &VK) {
+    if (auto *RE = dyn_cast<DadaoMCExpr>(Expr)) {
+      VK = RE->getKind();
+      return RE->evaluateAsConstant(Imm);
+    }
+
+    if (auto CE = dyn_cast<MCConstantExpr>(Expr)) {
+      VK = DadaoMCExpr::VK_Dadao_None;
+      Imm = CE->getValue();
+      return true;
+    }
+
+    return false;
+  }
+  */
+
+  bool isBareSymbol() const {
+    // For test only!
+    return true;
+
+    /*
+    int64_t Imm;
+    DadaoMCExpr::VariantKind VK = DadaoMCExpr::VK_Dadao_None;
+    // Must be of 'immediate' type but not a constant.
+    if (!isImm() || evaluateConstantImm(getImm(), Imm, VK))
+      return false;
+    return RISCVAsmParser::classifySymbolRef(getImm(), VK) &&
+           VK == RISCVMCExpr::VK_RISCV_None;
+    */
   }
 
   void addExpr(MCInst &Inst, const MCExpr *Expr) const {
@@ -723,6 +750,10 @@ public:
 
 } // end anonymous namespace
 
+void DadaoAsmParser::emitToStreamer(MCStreamer &S, const MCInst &Inst) {
+  S.emitInstruction(Inst, getSTI());
+}
+
 bool DadaoAsmParser::ParseDirective(AsmToken /*DirectiveId*/) { return true; }
 
 bool DadaoAsmParser::MatchAndEmitInstruction(SMLoc IdLoc, unsigned &Opcode,
@@ -735,9 +766,12 @@ bool DadaoAsmParser::MatchAndEmitInstruction(SMLoc IdLoc, unsigned &Opcode,
 
   switch (MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm)) {
   case Match_Success:
-    Out.emitInstruction(Inst, SubtargetInfo);
+    // Out.emitInstruction(Inst, SubtargetInfo);
     Opcode = Inst.getOpcode();
-    return false;
+    // return false;
+    return processInstruction(Inst, IdLoc, Operands, Out);
+    // TODO:
+    // return processInstruction(Inst, IDLoc, Operands, Out);
   case Match_MissingFeature:
     return Error(IdLoc, "Instruction use requires option to be enabled");
   case Match_MnemonicFail:
@@ -759,6 +793,55 @@ bool DadaoAsmParser::MatchAndEmitInstruction(SMLoc IdLoc, unsigned &Opcode,
   }
 
   llvm_unreachable("Unknown match type detected!");
+}
+
+static unsigned checkOpcodeWydeposMatch(unsigned int Opcode, uint64_t Wydepos) {
+  uint64_t CorrectWydepos = DDWP::BEYOND; 
+  switch (Opcode) {
+    case Dadao::ORW_RWII_W0:
+      CorrectWydepos = DDWP::WPOS_0;
+      break;
+    case Dadao::ORW_RWII_W1:
+      CorrectWydepos = DDWP::WPOS_1;
+      break;
+    case Dadao::ORW_RWII_W2:
+      CorrectWydepos = DDWP::WPOS_2;
+      break;
+    case Dadao::ORW_RWII_W3:
+      CorrectWydepos = DDWP::WPOS_3;
+      break;
+    default:
+      llvm_unreachable("Invalid Opcode to check wyde position!");
+  }
+  return (Wydepos == CorrectWydepos) ? MCTargetAsmParser::Match_Success : MCTargetAsmParser::Match_InvalidOperand;
+}
+
+unsigned
+DadaoAsmParser::checkEarlyTargetMatchPredicate(MCInst &Inst,
+                                              const OperandVector &Operands) {
+  switch (Inst.getOpcode()) {
+  default:
+    return Match_Success;
+  case Dadao::ORW_RWII_W0:
+  case Dadao::ORW_RWII_W1:
+  case Dadao::ORW_RWII_W2:
+  case Dadao::ORW_RWII_W3:
+    // TODO: Is there a safe way to do this?
+    const DadaoOperand *WydePosOperand = (const DadaoOperand *)Operands[2].get();
+    if (!WydePosOperand->isImm())
+      return Match_InvalidOperand;
+    const MCConstantExpr *ConstExpr = dyn_cast<MCConstantExpr>(WydePosOperand->getImm());
+    if (!ConstExpr)
+      return Match_InvalidOperand;
+    uint64_t Value = ConstExpr->getValue();
+    return checkOpcodeWydeposMatch(Inst.getOpcode(), Value);
+    // return (Value == DDWP::WPOS_0) ? Match_Success : Match_InvalidOperand;
+  // case Mips::DAHI:
+  //   if (static_cast<MipsOperand &>(*Operands[1])
+  //           .isValidForTie(static_cast<MipsOperand &>(*Operands[2])))
+  //     return Match_Success;
+  //   return Match_MnemonicFail;
+  }
 }
 
 // Both '%rN' and 'rN' are parsed as valid registers. This was done to remain
@@ -1103,6 +1186,103 @@ bool DadaoAsmParser::ParseInstruction(ParseInstructionInfo & /*Info*/,
       return true;
   }
 
+  return false;
+}
+
+OperandMatchResultTy DadaoAsmParser::parseBareSymbol(OperandVector &Operands) {
+  SMLoc S = getLoc();
+  const MCExpr *Res;
+
+  if (getLexer().getKind() != AsmToken::Identifier)
+    return MatchOperand_NoMatch;
+
+  StringRef Identifier;
+  AsmToken Tok = getLexer().getTok();
+
+  if (getParser().parseIdentifier(Identifier))
+    return MatchOperand_ParseFail;
+
+  SMLoc E = SMLoc::getFromPointer(S.getPointer() + Identifier.size());
+
+  if (Identifier.consume_back("@plt")) {
+    Error(getLoc(), "'@plt' operand not valid for instruction");
+    return MatchOperand_ParseFail;
+  }
+
+  MCSymbol *Sym = getContext().getOrCreateSymbol(Identifier);
+
+  if (Sym->isVariable()) {
+    const MCExpr *V = Sym->getVariableValue(/*SetUsed=*/false);
+    if (!isa<MCSymbolRefExpr>(V)) {
+      getLexer().UnLex(Tok); // Put back if it's not a bare symbol.
+      return MatchOperand_NoMatch;
+    }
+    Res = V;
+  } else
+    Res = MCSymbolRefExpr::create(Sym, MCSymbolRefExpr::VK_None, getContext());
+
+  MCBinaryExpr::Opcode Opcode;
+  switch (getLexer().getKind()) {
+  default:
+    Operands.push_back(DadaoOperand::createImm(Res, S, E));
+    return MatchOperand_Success;
+  case AsmToken::Plus:
+    Opcode = MCBinaryExpr::Add;
+    getLexer().Lex();
+    break;
+  case AsmToken::Minus:
+    Opcode = MCBinaryExpr::Sub;
+    getLexer().Lex();
+    break;
+  }
+
+  const MCExpr *Expr;
+  if (getParser().parseExpression(Expr, E))
+    return MatchOperand_ParseFail;
+  Res = MCBinaryExpr::create(Opcode, Res, Expr, getContext());
+  Operands.push_back(DadaoOperand::createImm(Res, S, E));
+  return MatchOperand_Success;
+}
+
+bool DadaoAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
+                                        OperandVector &Operands,
+                                        MCStreamer &Out) {
+  Inst.setLoc(IDLoc);
+
+  switch (Inst.getOpcode()) {
+  default:
+    break;
+  /*
+  case RISCV::PseudoLI: {
+    MCRegister Reg = Inst.getOperand(0).getReg();
+    const MCOperand &Op1 = Inst.getOperand(1);
+    if (Op1.isExpr()) {
+      // We must have li reg, %lo(sym) or li reg, %pcrel_lo(sym) or similar.
+      // Just convert to an addi. This allows compatibility with gas.
+      emitToStreamer(Out, MCInstBuilder(RISCV::ADDI)
+                              .addReg(Reg)
+                              .addReg(RISCV::X0)
+                              .addExpr(Op1.getExpr()));
+      return false;
+    }
+    int64_t Imm = Inst.getOperand(1).getImm();
+    // On RV32 the immediate here can either be a signed or an unsigned
+    // 32-bit number. Sign extension has to be performed to ensure that Imm
+    // represents the expected signed 64-bit number.
+    if (!isRV64())
+      Imm = SignExtend64<32>(Imm);
+    emitLoadImm(Reg, Imm, Out);
+    return false;
+  }
+  */
+  // case Dadao::PseudoSETRD: {
+  //   MCRegister Reg = Inst.getOperand(0).getReg();
+  //   assert(Dadao::GPRDRegClass.contains(Reg));
+  //   const MCOperand &Op1 = Inst.getOperand(1);
+  // }
+  }
+
+  emitToStreamer(Out, Inst);
   return false;
 }
 

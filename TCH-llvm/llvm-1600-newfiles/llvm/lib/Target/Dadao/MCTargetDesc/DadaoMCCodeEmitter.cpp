@@ -20,6 +20,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -126,6 +127,32 @@ unsigned DadaoMCCodeEmitter::getMachineOpValue(
 void DadaoMCCodeEmitter::encodeInstruction(
     const MCInst &Inst, raw_ostream &Ostream, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &SubtargetInfo) const {
+  if (Inst.getOpcode() == Dadao::PseudoSETRD) {
+    // expandAddTPRel(MI, OS, Fixups, STI);
+    // TODO: emit setzw_w0 + swym + swym + swym
+    // MCNumEmitted += 4;
+
+  // MCInst TmpInst = MCInstBuilder(RISCV::ADD)
+  //                      .addOperand(DestReg)
+  //                      .addOperand(SrcReg)
+  //                      .addOperand(TPReg);
+
+    MCOperand SrcSymbol = Inst.getOperand(1);
+
+    // const DadaoMCExpr *Expr = dyn_cast<DadaoMCExpr>(SrcSymbol.getExpr());
+    // assert(Expr && Expr->getKind() == DadaoMCExpr::VK_Dadao_None &&
+    //        "Expected tprel_add relocation on TP-relative symbol");
+    Fixups.push_back(MCFixup::create(
+      0, SrcSymbol.getExpr(), MCFixupKind(Dadao::FIXUP_DADAO_ABS), Inst.getLoc()));
+
+    MCInst NewInst = MCInstBuilder(Dadao::SETZW_RWII_W0).addOperand(Inst.getOperand(0)).addImm(0).addImm(0);
+    encodeInstruction(NewInst, Ostream, Fixups, SubtargetInfo);
+
+    MCInst TmpInst = MCInstBuilder(Dadao::SWYM_OIII).addImm(0);
+    for (int i = 0; i < 3; ++i)
+      encodeInstruction(TmpInst, Ostream, Fixups, SubtargetInfo);
+    return;
+  }
   // Get instruction encoding and emit it
   unsigned Value = getBinaryCodeForInstr(Inst, Fixups, SubtargetInfo);
   ++MCNumEmitted; // Keep track of the number of emitted insns.

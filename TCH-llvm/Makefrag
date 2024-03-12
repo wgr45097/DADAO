@@ -36,7 +36,7 @@ llvm-testsuite-highfive:
 	# Build
 	mkdir $(LLVM_TESTSUITE_BUILD)
 	cd $(LLVM_TESTSUITE_BUILD)
-	cmake --trace-expand -B $(LLVM_TESTSUITE_BUILD) $(LLVM_TESTSUITE_SOURCE) \
+	cmake  -B $(LLVM_TESTSUITE_BUILD) $(LLVM_TESTSUITE_SOURCE) \
 		-DTEST_SUITE_USER_MODE_EMULATION=True \
 		-DCMAKE_CXX_COMPILER_WORKS=1\
 		-DCMAKE_SIZEOF_VOID_P=8\
@@ -48,7 +48,7 @@ llvm-testsuite-highfive:
 		-DLINK_OPTIONS='--defsym;__.DADAO.start..text=0x400000'
 #		-DCMAKE_CXX_COMPILER='$(LLVM_1600_BUILD)/bin/clang++;-v;-target dadao;-B$(DIR_DADAO_INSTALL)/bin/dadao-unknown-elf-' 
 
-#	cd $(LLVM_TESTSUITE_BUILD); make
+	cd $(LLVM_TESTSUITE_BUILD); make
 
 llvm-1600-clean:
 	@echo "Remove old llvm source dir ..."

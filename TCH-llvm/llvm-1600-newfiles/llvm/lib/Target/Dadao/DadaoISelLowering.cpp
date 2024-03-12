@@ -414,6 +414,10 @@ SDValue DadaoTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Dadao target does not yet support tail call optimization.
   IsTailCall = false;
 
+  for (auto &out : CLI.Outs) {
+    out.Flags.setInReg();
+  }
+
   switch (CallConv) {
   case CallingConv::Fast:
   case CallingConv::C:
@@ -600,6 +604,7 @@ SDValue DadaoTargetLowering::LowerCCCCallTo(
     const SmallVectorImpl<SDValue> &OutVals,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
     SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
+  IsVarArg = false;
   // Analyze operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), ArgLocs,
