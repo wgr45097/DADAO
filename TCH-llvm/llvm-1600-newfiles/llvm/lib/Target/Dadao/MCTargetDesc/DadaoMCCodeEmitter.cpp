@@ -127,7 +127,11 @@ unsigned DadaoMCCodeEmitter::getMachineOpValue(
 void DadaoMCCodeEmitter::encodeInstruction(
     const MCInst &Inst, raw_ostream &Ostream, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &SubtargetInfo) const {
-  if (Inst.getOpcode() == Dadao::PseudoSETRD) {
+  // PseudoSETRD has no patterns and can only be constructed by parsing operands from assembly text.
+  // Therefore, rd2rd also needs to be checked.
+  // TODO: Select PseudoSETRD in ISel so that only PseudoSETRD needs to be checked (and expanded) here.
+  if (Inst.getOpcode() == Dadao::PseudoSETRD
+  || ( (Inst.getOpcode() == Dadao::RD2RD_ORRI) && Inst.getOperand(1).isExpr())) {
     // expandAddTPRel(MI, OS, Fixups, STI);
     // TODO: emit setzw_w0 + swym + swym + swym
     // MCNumEmitted += 4;
