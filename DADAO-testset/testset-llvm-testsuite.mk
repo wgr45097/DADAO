@@ -3,6 +3,7 @@
 #
 
 LLVM_TESTSUITE_GITHUB		:= https://github.com/llvm/llvm-test-suite.git
+LLVM_TESTSUITE_LOCAL		:= /pub/GITHUB/llvm/llvm-test-suite.git
 LLVM_TESTSUITE_VERSION		:= llvmorg-16.0.0
 LLVM_TESTSUITE_BRANCH		:= dadao-1600
 
@@ -24,7 +25,7 @@ testset-llvm-testsuite-source:
 	@test -d $(DIR_DADAO_SOURCE) || mkdir -p $(DIR_DADAO_SOURCE)
 	@rm -fr $(LLVM_TESTSUITE_SOURCE)
 	# Clone local repo
-	@git clone -q $(LLVM_TESTSUITE_GITHUB) -- $(LLVM_TESTSUITE_SOURCE)
+	@git clone -q $(LLVM_TESTSUITE_LOCAL) -- $(LLVM_TESTSUITE_SOURCE)
 	# Specify version
 	@cd $(LLVM_TESTSUITE_SOURCE); git checkout -qb $(LLVM_TESTSUITE_BRANCH) $(LLVM_TESTSUITE_VERSION)
 	# New files
