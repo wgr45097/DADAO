@@ -1,0 +1,26 @@
+From e84683939a76d6c2448e0b22817f54c9bac091f0 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Mon, 15 Apr 2024 12:37:11 +0800
+Subject: [PATCH] DADAO: treat dadaoptr as integer
+
+---
+ llvm/include/llvm/Support/MachineValueType.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/llvm/include/llvm/Support/MachineValueType.h b/llvm/include/llvm/Support/MachineValueType.h
+index cc228b475b2f..fa2773ab3dfe 100644
+--- a/llvm/include/llvm/Support/MachineValueType.h
++++ b/llvm/include/llvm/Support/MachineValueType.h
+@@ -375,7 +375,8 @@ namespace llvm {
+               (SimpleTy >= MVT::FIRST_INTEGER_FIXEDLEN_VECTOR_VALUETYPE &&
+                SimpleTy <= MVT::LAST_INTEGER_FIXEDLEN_VECTOR_VALUETYPE) ||
+               (SimpleTy >= MVT::FIRST_INTEGER_SCALABLE_VECTOR_VALUETYPE &&
+-               SimpleTy <= MVT::LAST_INTEGER_SCALABLE_VECTOR_VALUETYPE));
++               SimpleTy <= MVT::LAST_INTEGER_SCALABLE_VECTOR_VALUETYPE) ||
++               SimpleTy == MVT::dadaoptr);
+     }
+ 
+     /// Return true if this is an integer, not including vectors.
+-- 
+2.34.1
+

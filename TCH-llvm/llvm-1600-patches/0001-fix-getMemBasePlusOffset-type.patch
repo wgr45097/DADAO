@@ -1,0 +1,34 @@
+From 79e7ddb2f717d6446d8bb1d78c8515b60949d296 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Sun, 21 Apr 2024 15:30:17 +0800
+Subject: [PATCH] fix getMemBasePlusOffset type
+
+---
+ llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp b/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
+index 982480338fd7..52de61293078 100644
+--- a/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
++++ b/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
+@@ -6909,14 +6909,15 @@ SDValue SelectionDAG::getMemBasePlusOffset(SDValue Base, TypeSize Offset,
+                                            const SDLoc &DL,
+                                            const SDNodeFlags Flags) {
+   EVT VT = Base.getValueType();
++  EVT IndexVT = VT.isDadaoPtr() ? MVT::i64 : VT;
+   SDValue Index;
+ 
+   if (Offset.isScalable())
+-    Index = getVScale(DL, Base.getValueType(),
++    Index = getVScale(DL, IndexVT,
+                       APInt(Base.getValueSizeInBits().getFixedValue(),
+                             Offset.getKnownMinValue()));
+   else
+-    Index = getConstant(Offset.getFixedValue(), DL, VT);
++    Index = getConstant(Offset.getFixedValue(), DL, IndexVT);
+ 
+   return getMemBasePlusOffset(Base, Index, DL, Flags);
+ }
+-- 
+2.34.1
+

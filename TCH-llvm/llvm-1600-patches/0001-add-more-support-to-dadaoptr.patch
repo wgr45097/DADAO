@@ -1,0 +1,236 @@
+From e9449576ec29455a57907d84e1f5adabd5b008ed Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Sun, 21 Apr 2024 14:43:24 +0800
+Subject: [PATCH] add more support to dadaoptr
+
+---
+ llvm/include/llvm/CodeGen/ISDOpcodes.h        |  2 +
+ llvm/include/llvm/CodeGen/ValueTypes.h        |  4 ++
+ llvm/include/llvm/Support/MachineValueType.h  |  4 ++
+ .../include/llvm/Target/TargetSelectionDAG.td |  2 +-
+ .../lib/CodeGen/SelectionDAG/SelectionDAG.cpp | 19 +++++++-
+ .../SelectionDAG/SelectionDAGBuilder.cpp      | 43 ++++++++++++++-----
+ .../SelectionDAG/SelectionDAGDumper.cpp       |  1 +
+ 7 files changed, 62 insertions(+), 13 deletions(-)
+
+diff --git a/llvm/include/llvm/CodeGen/ISDOpcodes.h b/llvm/include/llvm/CodeGen/ISDOpcodes.h
+index 157247dfba98..261a232756c4 100644
+--- a/llvm/include/llvm/CodeGen/ISDOpcodes.h
++++ b/llvm/include/llvm/CodeGen/ISDOpcodes.h
+@@ -1228,6 +1228,8 @@ enum NodeType {
+   LIFETIME_START,
+   LIFETIME_END,
+ 
++  PTRADD,
++
+   /// GC_TRANSITION_START/GC_TRANSITION_END - These operators mark the
+   /// beginning and end of GC transition  sequence, and carry arbitrary
+   /// information that target might need for lowering.  The first operand is
+diff --git a/llvm/include/llvm/CodeGen/ValueTypes.h b/llvm/include/llvm/CodeGen/ValueTypes.h
+index af4c8ab40e82..f1b56c1055bb 100644
+--- a/llvm/include/llvm/CodeGen/ValueTypes.h
++++ b/llvm/include/llvm/CodeGen/ValueTypes.h
+@@ -145,6 +145,10 @@ namespace llvm {
+       return isSimple() ? V.isInteger() : isExtendedInteger();
+     }
+ 
++    bool isDadaoPtr() const {
++      return isSimple() && V.isDadaoPtr();
++    }
++
+     /// Return true if this is an integer, but not a vector.
+     bool isScalarInteger() const {
+       return isSimple() ? V.isScalarInteger() : isExtendedScalarInteger();
+diff --git a/llvm/include/llvm/Support/MachineValueType.h b/llvm/include/llvm/Support/MachineValueType.h
+index d9e8b8d50df6..d10726ca48a0 100644
+--- a/llvm/include/llvm/Support/MachineValueType.h
++++ b/llvm/include/llvm/Support/MachineValueType.h
+@@ -379,6 +379,10 @@ namespace llvm {
+                SimpleTy == MVT::dadaoptr);
+     }
+ 
++    bool isDadaoPtr() const {
++      return SimpleTy == MVT::dadaoptr;
++    }
++
+     /// Return true if this is an integer, not including vectors.
+     bool isScalarInteger() const {
+       return (SimpleTy >= MVT::FIRST_INTEGER_VALUETYPE &&
+diff --git a/llvm/include/llvm/Target/TargetSelectionDAG.td b/llvm/include/llvm/Target/TargetSelectionDAG.td
+index a841cf7eb070..03a757fc3145 100644
+--- a/llvm/include/llvm/Target/TargetSelectionDAG.td
++++ b/llvm/include/llvm/Target/TargetSelectionDAG.td
+@@ -375,7 +375,7 @@ def tblockaddress: SDNode<"ISD::TargetBlockAddress",  SDTPtrLeaf, [],
+ 
+ def add        : SDNode<"ISD::ADD"       , SDTIntBinOp   ,
+                         [SDNPCommutative, SDNPAssociative]>;
+-def ptradd     : SDNode<"ISD::ADD"       , SDTPtrAddOp, []>;
++def ptradd     : SDNode<"ISD::PTRADD"       , SDTPtrAddOp, []>;
+ def sub        : SDNode<"ISD::SUB"       , SDTIntBinOp>;
+ def mul        : SDNode<"ISD::MUL"       , SDTIntBinOp,
+                         [SDNPCommutative, SDNPAssociative]>;
+diff --git a/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp b/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
+index 9a3609bc183b..982480338fd7 100644
+--- a/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
++++ b/llvm/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
+@@ -4785,7 +4785,7 @@ bool SelectionDAG::canCreateUndefOrPoison(SDValue Op, const APInt &DemandedElts,
+ }
+ 
+ bool SelectionDAG::isBaseWithConstantOffset(SDValue Op) const {
+-  if ((Op.getOpcode() != ISD::ADD && Op.getOpcode() != ISD::OR) ||
++  if ((Op.getOpcode() != ISD::ADD && Op.getOpcode() != ISD::OR && Op.getOpcode() != ISD::PTRADD) ||
+       !isa<ConstantSDNode>(Op.getOperand(1)))
+     return false;
+ 
+@@ -6156,6 +6156,16 @@ SDValue SelectionDAG::getNode(unsigned Opcode, const SDLoc &DL, EVT VT,
+       return V;
+     break;
+   }
++  case ISD::PTRADD:
++    assert(VT.isDadaoPtr() && "PTRADD result must be of dadaoptr type!");
++    assert(N1.getValueType().isDadaoPtr() &&
++           "First PTRADD argument must be of dadaoptr type!");
++    assert(N2.getValueType().isInteger() &&
++           "Second PTRADD argument must be an integer type!");
++    // ptradd(X, 0) -> X.
++    if (N2C && N2C->isNullValue())
++      return N1;
++    break;
+   case ISD::AND:
+     assert(VT.isInteger() && "This operator does not apply to FP types!");
+     assert(N1.getValueType() == N2.getValueType() &&
+@@ -6915,7 +6925,14 @@ SDValue SelectionDAG::getMemBasePlusOffset(SDValue Ptr, SDValue Offset,
+                                            const SDLoc &DL,
+                                            const SDNodeFlags Flags) {
+   assert(Offset.getValueType().isInteger());
++  if (auto *Constant = dyn_cast<ConstantSDNode>(Offset.getNode())) {
++    if (Constant->isNullValue())
++      return Ptr;
++  }
+   EVT BasePtrVT = Ptr.getValueType();
++  if (BasePtrVT.isDadaoPtr()) {
++    return getNode(ISD::PTRADD, DL, BasePtrVT, Ptr, Offset, Flags);
++  }
+   return getNode(ISD::ADD, DL, BasePtrVT, Ptr, Offset, Flags);
+ }
+ 
+diff --git a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+index 1c9ddfcddffe..a391aed7815c 100644
+--- a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
++++ b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+@@ -3905,6 +3905,15 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+   SDLoc dl = getCurSDLoc();
+   auto &TLI = DAG.getTargetLoweringInfo();
+ 
++  // FIXME: This does not work on GEPs with vectors and fat pointers, but dadao
++  // currently doesn't have a vector unit so that is probably not a problem.
++  bool DadaoPtr = N.getValueType().isDadaoPtr();
++  SDValue OrigN = N;
++
++  if (DadaoPtr) {
++    N = DAG.getConstant(0, dl, MVT::i64);
++  }
++
+   // Normalize Vector GEP - all scalar operands should be converted to the
+   // splat vector.
+   bool IsVectorGEP = I.getType()->isVectorTy();
+@@ -3915,7 +3924,10 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+   if (IsVectorGEP && !N.getValueType().isVector()) {
+     LLVMContext &Context = *DAG.getContext();
+     EVT VT = EVT::getVectorVT(Context, N.getValueType(), VectorElementCount);
+-    N = DAG.getSplat(VT, dl, N);
++    if (VectorElementCount.isScalable())
++      N = DAG.getSplatVector(VT, dl, N);
++    else
++      N = DAG.getSplatBuildVector(VT, dl, N);
+   }
+ 
+   for (gep_type_iterator GTI = gep_type_begin(&I), E = gep_type_end(&I);
+@@ -3988,7 +4000,10 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+       if (!IdxN.getValueType().isVector() && IsVectorGEP) {
+         EVT VT = EVT::getVectorVT(*Context, IdxN.getValueType(),
+                                   VectorElementCount);
+-        IdxN = DAG.getSplat(VT, dl, IdxN);
++        if (VectorElementCount.isScalable())
++          IdxN = DAG.getSplatVector(VT, dl, IdxN);
++        else
++          IdxN = DAG.getSplatBuildVector(VT, dl, IdxN);
+       }
+ 
+       // If the index is smaller or larger than intptr_t, truncate or extend
+@@ -3997,13 +4012,13 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+         IdxN = DAG.getSExtOrTrunc(IdxN, dl, N.getValueType());
+ 
+       if (ElementScalable) {
+-        EVT VScaleTy = IdxN.getValueType().getScalarType();
++        EVT VScaleTy = N.getValueType().getScalarType();
+         SDValue VScale = DAG.getNode(
+             ISD::VSCALE, dl, VScaleTy,
+             DAG.getConstant(ElementMul.getZExtValue(), dl, VScaleTy));
+         if (IsVectorGEP)
+-          VScale = DAG.getSplatVector(IdxN.getValueType(), dl, VScale);
+-        IdxN = DAG.getNode(ISD::MUL, dl, IdxN.getValueType(), IdxN, VScale);
++          VScale = DAG.getSplatVector(N.getValueType(), dl, VScale);
++        IdxN = DAG.getNode(ISD::MUL, dl, N.getValueType(), IdxN, VScale);
+       } else {
+         // If this is a multiply by a power of two, turn it into a shl
+         // immediately.  This is a very common case.
+@@ -4011,13 +4026,13 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+           if (ElementMul.isPowerOf2()) {
+             unsigned Amt = ElementMul.logBase2();
+             IdxN = DAG.getNode(ISD::SHL, dl,
+-                               IdxN.getValueType(), IdxN,
++                               N.getValueType(), IdxN,
+                                DAG.getConstant(Amt, dl, IdxN.getValueType()));
+           } else {
+             SDValue Scale = DAG.getConstant(ElementMul.getZExtValue(), dl,
+                                             IdxN.getValueType());
+             IdxN = DAG.getNode(ISD::MUL, dl,
+-                               IdxN.getValueType(), IdxN, Scale);
++                               N.getValueType(), IdxN, Scale);
+           }
+         }
+       }
+@@ -4034,6 +4049,10 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+     PtrMemTy = MVT::getVectorVT(PtrMemTy, VectorElementCount);
+   }
+ 
++  if (DadaoPtr)
++    N = DAG.getNode(ISD::PTRADD, getCurSDLoc(), OrigN.getValueType(), OrigN,
++        N);
++
+   if (PtrMemTy != PtrTy && !cast<GEPOperator>(I).isInBounds())
+     N = DAG.getPtrExtendInReg(N, dl, PtrMemTy);
+ 
+@@ -4187,10 +4206,12 @@ void SelectionDAGBuilder::visitLoad(const LoadInst &I) {
+       Root = Chain;
+       ChainI = 0;
+     }
+-    SDValue A = DAG.getNode(ISD::ADD, dl,
+-                            PtrVT, Ptr,
+-                            DAG.getConstant(Offsets[i], dl, PtrVT),
+-                            Flags);
++    // SDValue A = DAG.getNode(ISD::ADD, dl,
++    //                         PtrVT, Ptr,
++    //                         DAG.getConstant(Offsets[i], dl, PtrVT),
++    //                         Flags);
++    SDValue A =
++        DAG.getMemBasePlusOffset(Ptr, TypeSize::Fixed(Offsets[i]), dl, Flags);
+ 
+     SDValue L = DAG.getLoad(MemVTs[i], dl, Root, A,
+                             MachinePointerInfo(SV, Offsets[i]), Alignment,
+diff --git a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp
+index fe4261291fc5..ac6ceb5efda4 100644
+--- a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp
++++ b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp
+@@ -143,6 +143,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
+   case ISD::TargetIndex:                return "TargetIndex";
+   case ISD::ExternalSymbol:             return "ExternalSymbol";
+   case ISD::BlockAddress:               return "BlockAddress";
++  case ISD::PTRADD:                     return "PTRADD";
+   case ISD::INTRINSIC_WO_CHAIN:
+   case ISD::INTRINSIC_VOID:
+   case ISD::INTRINSIC_W_CHAIN: {
+-- 
+2.34.1
+

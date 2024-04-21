@@ -1,0 +1,24 @@
+From f001f85e350d2cffe2dc004d55ff475fc57b3ba3 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Mon, 15 Apr 2024 11:49:23 +0800
+Subject: [PATCH] DADAO: handle dadaoptr in getSizeInBits
+
+---
+ llvm/include/llvm/Support/MachineValueType.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/llvm/include/llvm/Support/MachineValueType.h b/llvm/include/llvm/Support/MachineValueType.h
+index 4b45fe1445d4..cc228b475b2f 100644
+--- a/llvm/include/llvm/Support/MachineValueType.h
++++ b/llvm/include/llvm/Support/MachineValueType.h
+@@ -1128,6 +1128,7 @@ namespace llvm {
+       case v2048f32:  return TypeSize::Fixed(65536);
+       case funcref:
+       case externref: return TypeSize::Fixed(0); // opaque type
++      case dadaoptr:  return TypeSize::Fixed(64);
+       }
+     }
+ 
+-- 
+2.34.1
+

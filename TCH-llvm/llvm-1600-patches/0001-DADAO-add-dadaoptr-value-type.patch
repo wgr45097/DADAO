@@ -1,0 +1,76 @@
+From fc454c0a4d464cd9bcff062fea092603a9030b12 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Mon, 15 Apr 2024 11:41:29 +0800
+Subject: [PATCH] DADAO: add dadaoptr value type
+
+---
+ llvm/include/llvm/CodeGen/ValueTypes.td      | 1 +
+ llvm/include/llvm/Support/MachineValueType.h | 4 +++-
+ llvm/lib/CodeGen/ValueTypes.cpp              | 3 +++
+ llvm/utils/TableGen/CodeGenTarget.cpp        | 1 +
+ 4 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/llvm/include/llvm/CodeGen/ValueTypes.td b/llvm/include/llvm/CodeGen/ValueTypes.td
+index c22553855c55..aa9e17af1de5 100644
+--- a/llvm/include/llvm/CodeGen/ValueTypes.td
++++ b/llvm/include/llvm/CodeGen/ValueTypes.td
+@@ -236,6 +236,7 @@ def funcref   : ValueType<0,    192>;  // WebAssembly's funcref type
+ def externref : ValueType<0,    193>;  // WebAssembly's externref type
+ def x86amx    : ValueType<8192, 194>;  // X86 AMX value
+ def i64x8     : ValueType<512,  195>;  // 8 Consecutive GPRs (AArch64)
++def dadaoptr  : ValueType<64,   196>;  // Dadao's pointer type
+ 
+ def token      : ValueType<0, 248>;  // TokenTy
+ def MetadataVT : ValueType<0, 249>;  // Metadata
+diff --git a/llvm/include/llvm/Support/MachineValueType.h b/llvm/include/llvm/Support/MachineValueType.h
+index d7ad32737a45..4b45fe1445d4 100644
+--- a/llvm/include/llvm/Support/MachineValueType.h
++++ b/llvm/include/llvm/Support/MachineValueType.h
+@@ -292,8 +292,10 @@ namespace llvm {
+       x86amx         = 194,    // This is an X86 AMX value
+       i64x8          = 195,    // 8 Consecutive GPRs (AArch64)
+ 
++      dadaoptr       = 196,    // Dadao's pointer type
++
+       FIRST_VALUETYPE =  1,    // This is always the beginning of the list.
+-      LAST_VALUETYPE = i64x8,  // This always remains at the end of the list.
++      LAST_VALUETYPE = dadaoptr,  // This always remains at the end of the list.
+       VALUETYPE_SIZE = LAST_VALUETYPE + 1,
+ 
+       // This is the current maximum for LAST_VALUETYPE.
+diff --git a/llvm/lib/CodeGen/ValueTypes.cpp b/llvm/lib/CodeGen/ValueTypes.cpp
+index 608434800bc3..ba8e1e69555d 100644
+--- a/llvm/lib/CodeGen/ValueTypes.cpp
++++ b/llvm/lib/CodeGen/ValueTypes.cpp
+@@ -173,6 +173,7 @@ std::string EVT::getEVTString() const {
+   case MVT::Untyped:   return "Untyped";
+   case MVT::funcref:   return "funcref";
+   case MVT::externref: return "externref";
++  case MVT::dadaoptr:  return "dadaoptr";
+   }
+ }
+ 
+@@ -207,6 +208,8 @@ Type *EVT::getTypeForEVT(LLVMContext &Context) const {
+   case MVT::externref:
+     // pointer to opaque struct in addrspace(10)
+     return PointerType::get(StructType::create(Context), 10);
++  case MVT::dadaoptr:
++    return PointerType::get(Context, 0);
+   case MVT::funcref:
+     // pointer to i8 addrspace(20)
+     return PointerType::get(Type::getInt8Ty(Context), 20);
+diff --git a/llvm/utils/TableGen/CodeGenTarget.cpp b/llvm/utils/TableGen/CodeGenTarget.cpp
+index b7240f01300c..d4e68392081a 100644
+--- a/llvm/utils/TableGen/CodeGenTarget.cpp
++++ b/llvm/utils/TableGen/CodeGenTarget.cpp
+@@ -258,6 +258,7 @@ StringRef llvm::getEnumName(MVT::SimpleValueType T) {
+   case MVT::Untyped:   return "MVT::Untyped";
+   case MVT::funcref:   return "MVT::funcref";
+   case MVT::externref: return "MVT::externref";
++  case MVT::dadaoptr: return "MVT::dadaoptr";
+   default: llvm_unreachable("ILLEGAL VALUE TYPE!");
+   }
+   // clang-format on
+-- 
+2.34.1
+

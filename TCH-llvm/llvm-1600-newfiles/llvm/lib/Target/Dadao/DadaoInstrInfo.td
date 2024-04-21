@@ -67,13 +67,13 @@ def NEG : SDNodeXForm<imm, [{
 }]>;
 
 def ImmHex1AsmOperand : AsmOperandClass { let Name = "ImmHex1"; }
-def i64h1 : Operand<i64>, PatLeaf<(imm), [{
+def i64h1 : Operand<i64>, PatLeaf<(i64 imm), [{
     return N->getZExtValue() <= 63;}]> {
   let ParserMatchClass = ImmHex1AsmOperand;
 }
 
 def Imm12AsmOperand : AsmOperandClass { let Name = "Imm12"; }
-def imm12 : Operand<i64>, PatLeaf<(imm), [{
+def imm12 : Operand<i64>, PatLeaf<(i64 imm), [{
     return isInt<12>(N->getSExtValue()); }]> {
   let ParserMatchClass = Imm12AsmOperand;
 }
@@ -134,6 +134,7 @@ def i64lo16s : Operand<i64>, PatLeaf<(i64 imm), [{
 }
 
 // Extract w0/w1/w2/w3 of an immediate value.
+// Immediate fields in an instruction is always typed as i64, even in RB-related instructions.
 def Wyde0 : SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(((uint64_t)N->getZExtValue() >> 00) & 0xFFFF, SDLoc(N), MVT::i64); }]>;
 def Wyde1 : SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(((uint64_t)N->getZExtValue() >> 16) & 0xFFFF, SDLoc(N), MVT::i64); }]>;
 def Wyde2 : SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(((uint64_t)N->getZExtValue() >> 32) & 0xFFFF, SDLoc(N), MVT::i64); }]>;
@@ -185,7 +186,7 @@ def wposPred3 : wposPred <3>;
 
 // Addressing modes.
 def ADDR_RRRI : ComplexPattern<i64, 3, "selectAddrRRRI", [], []>;
-def ADDR_RRII : ComplexPattern<i64, 2, "selectAddrRRII", [frameindex], []>;
+def ADDR_RRII : ComplexPattern<dadaoptr, 2, "selectAddrRRII", [frameindex], []>;
 
 // Address operands.
 def MemRegRegAsmOperand : AsmOperandClass {
@@ -205,7 +206,7 @@ def MemRegImmAsmOperand : AsmOperandClass {
   let Name = "MemRegImm";
   let ParserMethod  = "parseMemoryOperand";
 }
-def MEM_RRII : Operand<i64> {
+def MEM_RRII : Operand<dadaoptr> {
   let DecoderMethod = "decodeRRIIMemoryValue";
   let EncoderMethod = "getRRIIMemoryOpValue";
   let MIOperandInfo = (ops GPRB:$base, imm12:$offset);
@@ -298,7 +299,8 @@ class ALU_RB_ORRR<bits<6> minorop, string OpcString, SDNode OpNode, RegisterClas
             OpcString, "$RxHb, $RyHc, $RzHd",
             [(set GPRx:$RxHb, (OpNode GPRx:$RyHc, GPRz:$RzHd))]>;
 
-def ADD_RB_ORRR : ALU_RB_ORRR<0b101110, "add", add, GPRB, GPRD>;
+// TODO: match ptradd as defined in __install/include/llvm/Target/TargetSelectionDAG.td
+def ADD_RB_ORRR : ALU_RB_ORRR<0b101110, "add", ptradd, GPRB, GPRD>;
 def SUB_RB_ORRR : ALU_RB_ORRR<0b101111, "sub", sub, GPRB, GPRD>;
 
 class ALU_RRII<bits<8> majorop, string OpcString, SDNode OpNode, RegisterClass GPRx, RegisterClass GPRy, PatLeaf LoExt>
@@ -371,7 +373,7 @@ class CONDSET_RRRR<bits<8> majorop, string OpcString>
   : Inst_RRRR<majorop, (outs GPRD:$RdHb), (ins GPRD:$RdHa, GPRD:$RdHc, GPRD:$RdHd),
               OpcString, "$RdHa, $RdHb, $RdHc, $RdHd",
               [(set (i64 GPRD:$RdHb), (DadaoSelectCC (i64 GPRD:$RdHc), (i64 GPRD:$RdHd),
-                                      (imm:$RdHa)))]> {
+                                      (i64 imm:$RdHa)))]> {
   }
 
 def CSN     : CONDSET_RRRR<0b00100000, "csn">;
@@ -472,6 +474,9 @@ def : Pat<(i64 oimm48:$imm), (ANDNW_RWII_W2 (ANDNW_RWII_W1 (SETOW_RWII_W0
 def : Pat<(i64 imm:$imm), (ORW_RWII_W3 (ORW_RWII_W2 (ORW_RWII_W1 (SETZW_RWII_W0
                           (Wyde0 imm:$imm)), (Wyde1 imm:$imm)), (Wyde2 imm:$imm)), (Wyde3 imm:$imm))>;
 
+def : Pat<(dadaoptr imm:$imm), (ORW_RB_RWII_W3 (ORW_RB_RWII_W2 (ORW_RB_RWII_W1 (SETZW_RB_RWII_W0
+                          (Wyde0 imm:$imm)), (Wyde1 imm:$imm)), (Wyde2 imm:$imm)), (Wyde3 imm:$imm))>;
+
 // -------------------------------------------------- //
 // LOAD instructions
 // -------------------------------------------------- //
@@ -495,7 +500,7 @@ def LDO_RRII  : LOAD_RRII<0b00110011, "ldo",  GPRD, load, i64>;
 def LDBU_RRII : LOAD_RRII<0b01000000, "ldbu", GPRD, zextloadi8,  i64>;
 def LDWU_RRII : LOAD_RRII<0b01000001, "ldwu", GPRD, zextloadi16, i64>;
 def LDTU_RRII : LOAD_RRII<0b01000010, "ldtu", GPRD, zextloadi32, i64>;
-def LDRB_RRII : LOAD_RRII<0b01000011, "ldrb", GPRB, load, i64>;
+def LDRB_RRII : LOAD_RRII<0b01000011, "ldrb", GPRB, load, dadaoptr>;
 
 class LOAD_RRRI<bits<8> majorop, string OpcString, RegisterClass GPRx, PatFrag OpNode, ValueType Ty>
   : Inst_RRRI<majorop, (outs GPRx:$RxHa), (ins MEM_RRRI:$src),
@@ -539,7 +544,7 @@ def STB_RRII  : STORE_RRII<0b00111000, "stb",  GPRD, truncstorei8,  i64>;
 def STW_RRII  : STORE_RRII<0b00111001, "stw",  GPRD, truncstorei16, i64>;
 def STT_RRII  : STORE_RRII<0b00111010, "stt",  GPRD, truncstorei32, i64>;
 def STO_RRII  : STORE_RRII<0b00111011, "sto",  GPRD, store, i64>;
-def STRB_RRII : STORE_RRII<0b01001011, "strb", GPRB, store, i64>;
+def STRB_RRII : STORE_RRII<0b01001011, "strb", GPRB, store, dadaoptr>;
 
 class STORE_RRRI<bits<8> majorop, string OpcString, RegisterClass GPRx, PatFrag OpNode, ValueType Ty>
   : Inst_RRRI<majorop, (outs), (ins GPRx:$RxHa, MEM_RRRI:$dst),
@@ -641,7 +646,7 @@ def IndirectCallTargetPattern : ComplexPattern<i64, 3, "selectIndirectCallTarget
 
 def CALL_RRII : Inst_RRII<0b01101101, (outs), (ins GPRB:$RxHa, GPRD:$RyHb, i64lo12s:$Imm12),
       "call", "$RxHa, $RyHb, $Imm12",
-      [(DadaoCall (IndirectCallTargetPattern GPRB:$RxHa, GPRD:$RyHb, i64lo12s:$Imm12))]> {
+      [(DadaoCall (IndirectCallTargetPattern (dadaoptr GPRB:$RxHa), GPRD:$RyHb, i64lo12s:$Imm12))]> {
   let isCall = 1;
   let isCodeGenOnly = 0;
   let Uses = [RASP];

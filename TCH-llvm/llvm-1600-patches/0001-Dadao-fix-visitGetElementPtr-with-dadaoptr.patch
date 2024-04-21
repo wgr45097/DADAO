@@ -1,0 +1,64 @@
+From f377de80144d9cafba84f03e54af77ef5c70bea7 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Tue, 16 Apr 2024 18:47:23 +0800
+Subject: [PATCH] Dadao: fix visitGetElementPtr with dadaoptr
+
+---
+ .../CodeGen/SelectionDAG/SelectionDAGBuilder.cpp | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+index 0bdfdac6a65f..1c9ddfcddffe 100644
+--- a/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
++++ b/llvm/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+@@ -3975,7 +3975,8 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+         if (Offs.isNonNegative() && cast<GEPOperator>(I).isInBounds())
+           Flags.setNoUnsignedWrap(true);
+ 
+-        OffsVal = DAG.getSExtOrTrunc(OffsVal, dl, N.getValueType());
++        if (!(IdxTy == MVT::i64 && N.getValueType() == MVT::dadaoptr))
++          OffsVal = DAG.getSExtOrTrunc(OffsVal, dl, N.getValueType());
+ 
+         N = DAG.getNode(ISD::ADD, dl, N.getValueType(), N, OffsVal, Flags);
+         continue;
+@@ -3992,16 +3993,17 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+ 
+       // If the index is smaller or larger than intptr_t, truncate or extend
+       // it.
+-      IdxN = DAG.getSExtOrTrunc(IdxN, dl, N.getValueType());
++      if (!(IdxN.getValueType() == MVT::i64 && N.getValueType() == MVT::dadaoptr))
++        IdxN = DAG.getSExtOrTrunc(IdxN, dl, N.getValueType());
+ 
+       if (ElementScalable) {
+-        EVT VScaleTy = N.getValueType().getScalarType();
++        EVT VScaleTy = IdxN.getValueType().getScalarType();
+         SDValue VScale = DAG.getNode(
+             ISD::VSCALE, dl, VScaleTy,
+             DAG.getConstant(ElementMul.getZExtValue(), dl, VScaleTy));
+         if (IsVectorGEP)
+-          VScale = DAG.getSplatVector(N.getValueType(), dl, VScale);
+-        IdxN = DAG.getNode(ISD::MUL, dl, N.getValueType(), IdxN, VScale);
++          VScale = DAG.getSplatVector(IdxN.getValueType(), dl, VScale);
++        IdxN = DAG.getNode(ISD::MUL, dl, IdxN.getValueType(), IdxN, VScale);
+       } else {
+         // If this is a multiply by a power of two, turn it into a shl
+         // immediately.  This is a very common case.
+@@ -4009,13 +4011,13 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
+           if (ElementMul.isPowerOf2()) {
+             unsigned Amt = ElementMul.logBase2();
+             IdxN = DAG.getNode(ISD::SHL, dl,
+-                               N.getValueType(), IdxN,
++                               IdxN.getValueType(), IdxN,
+                                DAG.getConstant(Amt, dl, IdxN.getValueType()));
+           } else {
+             SDValue Scale = DAG.getConstant(ElementMul.getZExtValue(), dl,
+                                             IdxN.getValueType());
+             IdxN = DAG.getNode(ISD::MUL, dl,
+-                               N.getValueType(), IdxN, Scale);
++                               IdxN.getValueType(), IdxN, Scale);
+           }
+         }
+       }
+-- 
+2.34.1
+

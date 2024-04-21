@@ -1,0 +1,26 @@
+From b5896845549db4a7ae831754b61cf9d6de1e2054 Mon Sep 17 00:00:00 2001
+From: Guorui Wen <grwen@stu.pku.edu.cn>
+Date: Mon, 15 Apr 2024 18:55:28 +0800
+Subject: [PATCH] DADAO: add dadaoptr to isScalarInteger
+
+---
+ llvm/include/llvm/Support/MachineValueType.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/llvm/include/llvm/Support/MachineValueType.h b/llvm/include/llvm/Support/MachineValueType.h
+index fa2773ab3dfe..d9e8b8d50df6 100644
+--- a/llvm/include/llvm/Support/MachineValueType.h
++++ b/llvm/include/llvm/Support/MachineValueType.h
+@@ -382,7 +382,8 @@ namespace llvm {
+     /// Return true if this is an integer, not including vectors.
+     bool isScalarInteger() const {
+       return (SimpleTy >= MVT::FIRST_INTEGER_VALUETYPE &&
+-              SimpleTy <= MVT::LAST_INTEGER_VALUETYPE);
++              SimpleTy <= MVT::LAST_INTEGER_VALUETYPE) ||
++              SimpleTy == MVT::dadaoptr;
+     }
+ 
+     /// Return true if this is a vector value type.
+-- 
+2.34.1
+

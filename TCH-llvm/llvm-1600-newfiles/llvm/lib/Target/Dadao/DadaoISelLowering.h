@@ -100,6 +100,23 @@ public:
 
   SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
+  MVT getPointerTy(const DataLayout &DL, uint32_t AS = 0) const override {
+    return MVT::dadaoptr;
+    // return MVT::getIntegerVT(DL.getPointerSizeInBits(AS));
+  }
+
+  MVT getPointerMemTy(const DataLayout &DL, uint32_t AS = 0) const override {
+    return MVT::dadaoptr;
+    // return MVT::getIntegerVT(DL.getPointerSizeInBits(AS));
+  }
+
+  EVT getSetCCResultType(const DataLayout &DL, LLVMContext &,
+                                             EVT VT) const override {
+    return MVT::i64;
+    // assert(!VT.isVector() && "No default SetCC type for vectors!");
+    // return getPointerTy(DL).SimpleTy;
+  }
+
   void computeKnownBitsForTargetNode(const SDValue Op, KnownBits &Known,
                                      const APInt &DemandedElts,
                                      const SelectionDAG &DAG,
