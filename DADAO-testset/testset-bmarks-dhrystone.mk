@@ -29,7 +29,12 @@ testset-dhrystone-qemu-highfive:
 	@rm -fr $(TESTSET_DHRYSTONE_QEMU_TARGET)
 	@mkdir -p $(TESTSET_DHRYSTONE_QEMU_TARGET)
 	@cd $(TESTSET_DHRYSTONE_QEMU_TARGET) ;								\
-		$(DADAO_ELF_GCC)												\
+		$(DADAO_LLVM_CLANG)												\
+			-Wno-implicit-int								\
+			-Wno-implicit-function-declaration								\
+			-v -mllvm --optimize-regalloc -mllvm --regalloc=greedy -target dadao -B$(DIR_DADAO_INSTALL)/bin/dadao-unknown-elf- \
+			-Wl,--defsym,__.DADAO.start..text=0x400000 \
+			-I$(DIR_DADAO_INSTALL)/dadao-unknown-elf/include/ -D__DADAO__=1 \
 			-static														\
 			-save-temps													\
 			-DHZ=250													\

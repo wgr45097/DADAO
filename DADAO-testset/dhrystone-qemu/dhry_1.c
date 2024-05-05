@@ -117,7 +117,8 @@ main ()
   printf ("Please give the number of runs through the benchmark: ");
   {
     int n;
-    scanf ("%d", &n);
+    // scanf ("%d", &n);
+    n = 1000;
     Number_Of_Runs = n;
   }
   printf ("\n");
@@ -257,21 +258,21 @@ main ()
   }
   else
   {
-#ifdef TIME
-    Microseconds = (float) User_Time * Mic_secs_Per_Second 
-                        / (float) Number_Of_Runs;
-    Dhrystones_Per_Second = (float) Number_Of_Runs / (float) User_Time;
-#else
-    Microseconds = (float) User_Time * Mic_secs_Per_Second 
-                        / ((float) HZ * ((float) Number_Of_Runs));
-    Dhrystones_Per_Second = ((float) HZ * (float) Number_Of_Runs)
-                        / (float) User_Time;
-#endif
-    printf ("Microseconds for one run through Dhrystone: ");
-    printf ("%6.1f \n", Microseconds);
-    printf ("Dhrystones per Second:                      ");
-    printf ("%6.1f \n", Dhrystones_Per_Second);
-    printf ("\n");
+// #ifdef TIME
+//     Microseconds = (float) User_Time * Mic_secs_Per_Second 
+//                         / (float) Number_Of_Runs;
+//     Dhrystones_Per_Second = (float) Number_Of_Runs / (float) User_Time;
+// #else
+//     Microseconds = (float) User_Time * Mic_secs_Per_Second 
+//                         / ((float) HZ * ((float) Number_Of_Runs));
+//     Dhrystones_Per_Second = ((float) HZ * (float) Number_Of_Runs)
+//                         / (float) User_Time;
+// #endif
+//     printf ("Microseconds for one run through Dhrystone: ");
+//     printf ("%6.1f \n", Microseconds);
+//     printf ("Dhrystones per Second:                      ");
+//     printf ("%6.1f \n", Dhrystones_Per_Second);
+//     printf ("\n");
   }
   
 }
